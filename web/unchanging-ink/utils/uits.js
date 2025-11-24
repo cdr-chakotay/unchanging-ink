@@ -12,6 +12,10 @@ const DEFAULT_OPTIONS_VERIFY_TIMESTAMP = {
   online: true,
 }
 
+const DEFAULT_OPTIONS_GET_PROOF = {
+  maxRetries: 5,
+}
+
 // Case-sensitive v1
 const COMPACT_TS_RE =
   /^(?<authority>(?:[hH][tT][tT][pP][sS]?:\/\/)?[[\]0-9a-z_.:-]+(?::[0-9]+)?)\/(?<interval>[0-9]+)#v1(?=[:,])(?::(?<mth>[a-zA-Z0-9_-]+))?(?:,(?<timestamp>[^,]+),(?<proof>[a-zA-Z0-9_-]+))?$/
@@ -48,6 +52,35 @@ export function createTimestampHash(data, timestamp) {
   return new SHA3(256).update(encodeCanonical(tsStruct)).digest()
 }
 
+// FIXME: maybe use a proper library to avoid errors. Like https://github.com/brianloveswords/base64-url
+/**
+ * Encodes the given buffer into a Base64URL-encoded string.
+ *
+ * @param {Buffer} buf - The buffer to encode.
+ * @return {string} The Base64URL-encoded string.
+ */
+ export function base64UrlEncode(buf) {
+    const b64 = Buffer.from(buf).toString('base64')
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  }
+
+/**
+ * Decodes a given Base64 URL encoded string.
+ *
+ * @param {string} s - The Base64 URL encoded string to decode. If the input is falsy, it returns an empty Buffer.
+ * @return {Buffer} The decoded content as a Buffer.
+ */
+ export function base64UrlDecode(s) {
+    if (!s) return Buffer.alloc(0)
+
+    // Swap back
+    let b64 = s.replace(/-/g, '+').replace(/_/g, '/')
+
+    // Pad to multiple of 4
+    b64 += '='.repeat((4 - (b64.length % 4)) % 4)
+    return Buffer.from(b64, 'base64')
+}
+
 function _verifyInclusionProof({ hash, head, a, path }) {
   let current = new SHA3(256)
     .update(Buffer.from([0]))
@@ -69,6 +102,9 @@ function _verifyInclusionProof({ hash, head, a, path }) {
     }
     a >>= 1
   }
+  // TODO: Remove
+  console.log(current, head)
+  console.log(current.toString('base64'), head.toString('base64'))
   return current.compare(head) === 0
 }
 
@@ -89,12 +125,12 @@ function verifyTsProof(hash, { ith, a, path }) {
   })
 }
 
-function verifyIntervalProof(ihash, mth, { a, path }) {
+function verifyIntervalProof(ihash, mth, { a, nodes }) {
   return _verifyInclusionProof({
     hash: ihash,
-    head: Buffer.from(mth, 'base64'),
+    head: mth,
     a,
-    path: path.map((item) => Buffer.from(item, 'base64')),
+    path: nodes.map((item) => Buffer.from(item, 'base64')),
   })
 }
 
@@ -344,5 +380,73 @@ export class TimestampService {
       }
     }
     return verifyTsProof(hash, ts.proof)
+  }
+
+  async verifyIntervalInclusion(ts, inclusion_proof){
+    let ith = ts.proof.ith
+    const mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64')
+
+    return verifyIntervalProof(ith, mth, inclusion_proof)
+
+  }
+
+
+  async getInclusionProof(ith_interval, mth_interval, options = DEFAULT_OPTIONS_GET_PROOF) {
+    // cast both intervals to int
+    ith_interval = parseInt(ith_interval)
+    mth_interval = parseInt(mth_interval)
+    if(ith_interval < 0 || mth_interval < 0) {
+        throw new Error('Invalid interval: ith and mth must be >= 0')
+    }
+
+    if(ith_interval > mth_interval) {
+      throw new Error('Invalid interval: ith must be <= mth')
+    }
+
+    const input_url = this.baseUrl + 'v1/mth/' + ith_interval + '/in/' + mth_interval
+    const headers = { Accept: 'application/json' }
+
+    let proof = await this._fetchProof(input_url, headers, options)
+    console.log(proof)
+    return proof
+    }
+
+
+
+  async _fetchProof(url, headers, options) {
+    let attempts = options.maxRetries
+    let response = await fetch(url, { headers })
+    if (response.ok) {
+      return await response.json()
+    } else {
+      // Retry if we have not reached the maximum number of attempts
+      while (attempts > 0) {
+        // wait a random time between 0 and 1000ms before retrying
+        await sleep(Math.floor(Math.random() * 1000))
+        attempts--
+        response = await fetch(url, { headers })
+        if (response.ok) {
+          return await response.json()
+        }
+      }
+    }
+    throw new Error(`Failed to fetch proof after ${options.maxRetries} attempts. Status code: ${response.status}, Error: ${response.statusText}`)
+  }
+
+
+  async getCachedMthForInterval(interval, urlsafe = true) {
+    let mth = this.cacheMtree[`0-${interval + 1}`]
+    if (!mth) {
+      return null
+    }
+    // Make url safe base64
+
+    let mth_base64 = Buffer.from(mth)
+    if (urlsafe) {
+      mth_base64 = base64UrlEncode(mth_base64)
+    } else {
+      mth_base64 = mth_base64.toString('base64')
+    }
+    return mth_base64
   }
 }

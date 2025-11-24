@@ -178,7 +178,7 @@ import { useI18n } from 'vue-i18n'
 import TimelineCard from '../components/Timeline'
 import { computeHash } from '../utils/hashing'
 import { sleep } from '../utils/misc'
-import { TimestampService } from '../utils/uits'
+import { base64UrlDecode, TimestampService } from '../utils/uits'
 import { validateTsInput } from '~/utils/validate'
 
 const { t } = useI18n()
@@ -337,10 +337,42 @@ async function doVerify() {
   let verified_mth = false
   let error = null
   try {
-    const data_hash = await computeHash(verifyInput)
-    const ts = await validateTsInput(JSON.parse(verifyInput.ts))
-    verified = await UiTs.value.verifyTimestamp(data_hash, ts)
-    console.log('Verified', verified)
+    const data_hash = await computeHash(verifyInput)  // compute hash of input data to verify it (servers as input)
+    const ts = await validateTsInput(JSON.parse(verifyInput.ts))  // validate timestamp object input
+
+    // verify data integration in interval tree
+    verified_ith = await UiTs.value.verifyTimestamp(data_hash, ts)
+    verified = verified_ith
+
+    // verify integration of interval tree into main tree
+    let proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64') // extract mth out of mth url from proof object in ts
+    let cached_mth = await UiTs.value.getCachedMthForInterval(ts.interval, false)
+
+    if (cached_mth && cached_mth !== proof_mth) {
+      // if the cached mth does not match the proof mth, for the same interval, the timestamp is not valid
+      return;
+    } else if (cached_mth && cached_mth === proof_mth) {
+      let inclusion_proof = await UiTs.value.getInclusionProof(ts.interval, ts.interval)
+      let verified_mth = await UiTs.value.verifyIntervalInclusion(ts, inclusion_proof )
+      console.log('Verified MTH:', verified_mth)
+
+
+
+    }
+
+    // timestamp is not cached, so we need to fetch it from the authority
+
+    //  if the interval is < than the cached intervals, we can do a proof if the mth can be used to build the cached mth
+
+
+    // if the interval is > the latest cached interval, we can try to verify if we can build the mth based on the cached mth
+
+    // We would need the intermediate nodes from the authority
+
+
+
+
+    console.log('Verified:', verified, ' ith:', verified_ith, 'mth:', verified_mth)
   } catch (err) {
     error = err
   } finally {
