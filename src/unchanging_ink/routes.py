@@ -231,7 +231,7 @@ def setup_routes(app: Sanic):
     )
     async def request_mth_consistency(request, new_interval, old_interval):
         async with app.ctx.engine.begin() as conn, app.ctx.redis.client() as redisconn:
-            tree = MainMerkleTree(redisconn, conn, width=new_interval)
+            tree = MainMerkleTree(redisconn, conn, width=new_interval+1)
             proof = await tree.compute_consistency_proof(old_interval)
         response = MainTreeConsistencyProof(
             old_interval, new_interval, [node.value for node in proof]
@@ -243,7 +243,7 @@ def setup_routes(app: Sanic):
     )
     async def request_mth_inclusion(request, new_interval, old_interval):
         async with app.ctx.engine.begin() as conn, app.ctx.redis.client() as redisconn:
-            tree = MainMerkleTree(redisconn, conn, width=new_interval)
+            tree = MainMerkleTree(redisconn, conn, width=new_interval+1)
             a, proof = await tree.compute_inclusion_proof(old_interval)
         response = MainTreeInclusionProof(
             old_interval, new_interval, a, [node.value for node in proof]

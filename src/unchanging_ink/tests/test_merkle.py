@@ -103,10 +103,6 @@ async def test_proof_simple_7_6(merkle_tree_7):
         await merkle_tree_7.calculate_node(0, 4),
     ]
 
-async def test_proof_simple_7_7(merkle_tree_7):
-    path, proof = await merkle_tree_7.compute_inclusion_proof(7)
-    # Assertions unclear so far.
-
 
 @pytest.mark.parametrize(
     "target,length", [(i, n) for n in range(1, 17) for i in range(n)]
