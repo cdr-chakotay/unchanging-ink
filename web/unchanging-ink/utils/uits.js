@@ -86,8 +86,11 @@ function _verifyInclusionProof({ hash, head, a, path }) {
     .update(Buffer.from([0]))
     .update(hash)
     .digest()
+  let i = 0
   for (const node of path) {
-    if ((a & 1) !== 0) {
+    console.log(i, a)
+    i = i + 1
+    if ((a & 1) !== 0) { // path bit is 1, current node is right side and other node is left side
       current = new SHA3(256)
         .update(Buffer.from([1]))
         .update(node)
