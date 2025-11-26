@@ -52,6 +52,27 @@ export function createTimestampHash(data, timestamp) {
   return new SHA3(256).update(encodeCanonical(tsStruct)).digest()
 }
 
+/**
+ * This function creates the hash out of the interval tree head.
+ * Therefore, it combines the interval, timestamp and ith into the Interval Tree Head Representation.
+ * Its return value is a Buffer containing the ihash - Hash of the Interval Tree Head Representation.
+ * @param interval Interval, which the interval tree belongs to
+ * @param timestamp Timestamp in ISO 8601 format out of the proof object
+ * @param ith Hash of the interval tree (SHA3-256)
+ */
+function createIHash(interval, timestamp, ith){
+  const ith_buf = Buffer.from(ith, 'base64')
+  const intervalTreeHeadStruct = {
+    interval,
+    timestamp,
+    ith: ith_buf,
+    typ: 'it',
+    version: '1',
+  }
+  return new SHA3(256).update(encodeCanonical(intervalTreeHeadStruct)).digest()
+
+}
+
 // FIXME: maybe use a proper library to avoid errors. Like https://github.com/brianloveswords/base64-url
 /**
  * Encodes the given buffer into a Base64URL-encoded string.
@@ -383,12 +404,12 @@ export class TimestampService {
   }
 
   async verifyIntervalInclusion(ts, inclusion_proof){
-    let ith = ts.proof.ith
+    const ihash = createIHash(ts.interval, ts.timestamp, ts.proof.ith)
 
     // Extract mth from url encoded mth inside the proof. Keep Buffer, as we need it downstream
     const mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/i)[0])
 
-    return verifyIntervalProof(ith, mth, inclusion_proof)
+    return verifyIntervalProof(ihash, mth, inclusion_proof)
 
   }
 
