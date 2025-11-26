@@ -128,7 +128,7 @@ function verifyTsProof(hash, { ith, a, path }) {
 function verifyIntervalProof(ihash, mth, { a, nodes }) {
   return _verifyInclusionProof({
     hash: ihash,
-    head: mth,
+    head: mth, // It is already a Buffer
     a,
     path: nodes.map((item) => Buffer.from(item, 'base64')),
   })
@@ -384,7 +384,9 @@ export class TimestampService {
 
   async verifyIntervalInclusion(ts, inclusion_proof){
     let ith = ts.proof.ith
-    const mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64')
+
+    // Extract mth from url encoded mth inside the proof. Keep Buffer, as we need it downstream
+    const mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/i)[0])
 
     return verifyIntervalProof(ith, mth, inclusion_proof)
 
