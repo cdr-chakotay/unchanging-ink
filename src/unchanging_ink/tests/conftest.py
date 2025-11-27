@@ -3,8 +3,12 @@ import sys
 
 import pytest
 
-from unchanging_ink.crypto.merkle import (AbstractAsyncMerkleTree,
-                                          DictCachingMerkleTree, MerkleNode)
+from unchanging_ink.crypto.merkle import (
+    AbstractAsyncMerkleTree,
+    DictCachingMerkleTree,
+    MerkleNode,
+)
+
 
 class EmptyMerkleTreeUncached(AbstractAsyncMerkleTree):
     async def fetch_leaf_data(self, position: int) -> bytes:
@@ -24,6 +28,7 @@ def merkle_tree_7():
 @pytest.fixture
 def merkle_tree_11() -> AbstractAsyncMerkleTree:
     return StandardMerkleTreeUncached(width=11)
+
 
 @pytest.fixture(scope="session")
 def event_loop():

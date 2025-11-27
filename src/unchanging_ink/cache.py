@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple
 import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from unchanging_ink.crypto import AbstractAsyncCachingMerkleTree, MerkleNode
+from unchanging_ink.crypto import AbstractAsyncCachingMerkleTree, Index0, MerkleNode
 from unchanging_ink.models import interval
 from unchanging_ink.schemas import Interval
 
@@ -18,11 +18,11 @@ class AbstractRedisAsyncCachingMerkleTree(AbstractAsyncCachingMerkleTree, ABC):
         self._aiorc = aiorediconn
         super().__init__(*args, **kwargs)
 
-    async def seed(self, data: Dict[Tuple[int, int], MerkleNode]):
+    async def seed(self, data: Dict[Tuple[Index0, Index0], MerkleNode]):
         for k, v in data.items():
             await self._setc(k, v)
 
-    async def _getc(self, key: Tuple[int, int]) -> Optional[MerkleNode]:
+    async def _getc(self, key: Tuple[Index0, Index0]) -> Optional[MerkleNode]:
         bkey = "{},{}".format(*key).encode()
         value = await self._aiorc.get(bkey)
         logger.debug("_getc", key=key, value=value)
@@ -30,7 +30,7 @@ class AbstractRedisAsyncCachingMerkleTree(AbstractAsyncCachingMerkleTree, ABC):
             return None
         return MerkleNode(key[0], key[1], value)
 
-    async def _setc(self, key: Tuple[int, int], value: MerkleNode):
+    async def _setc(self, key: Tuple[Index0, Index0], value: MerkleNode):
         logger.debug("_setc", key=key, value=value)
         key = "{},{}".format(*key).encode()
         a = await self._aiorc.set(key, value.value, ex=60 * 60 * 24)
@@ -39,8 +39,8 @@ class AbstractRedisAsyncCachingMerkleTree(AbstractAsyncCachingMerkleTree, ABC):
 
 @dataclass
 class PreloadCache:
-    start: int
-    end: int
+    start: Index0
+    end: Index0
     data: dict
 
 
@@ -50,13 +50,13 @@ class MainMerkleTree(AbstractRedisAsyncCachingMerkleTree):
         self._preload_cache: Optional[PreloadCache] = None
         super().__init__(aioredisconn, *args, **kwargs)
 
-    async def _setc(self, key: Tuple[int, int], value: MerkleNode):
+    async def _setc(self, key: Tuple[Index0, Index0], value: MerkleNode):
         if key[1] - key[0] <= MAX_CACHE_WIDTH:
             logger.debug("_setc noop", key=key)
             return
         return await super()._setc(key, value)
 
-    async def _getc(self, key: Tuple[int, int]) -> Optional[MerkleNode]:
+    async def _getc(self, key: Tuple[Index0, Index0]) -> Optional[MerkleNode]:
         # If preload_cache is set and keys fall within it, do not hit the redis cache,
         # instead don't return intermediate cached nodes, and let fetch_leaf data return
         # the cached data.
@@ -66,7 +66,11 @@ class MainMerkleTree(AbstractRedisAsyncCachingMerkleTree):
 
         if self._preload_cache:
             if self._preload_cache.start <= key[0] < key[1] <= self._preload_cache.end:
-                logger.debug("preload cache hit", start=self._preload_cache.start, end=self._preload_cache.end)
+                logger.debug(
+                    "preload cache hit",
+                    start=self._preload_cache.start,
+                    end=self._preload_cache.end,
+                )
                 return None
             else:
                 logger.debug("preload cache cleared1")
@@ -90,7 +94,7 @@ class MainMerkleTree(AbstractRedisAsyncCachingMerkleTree):
 
         return retval
 
-    async def fetch_leaf_data(self, position: int) -> bytes:
+    async def fetch_leaf_data(self, position: Index0) -> bytes:
         row = None
         if self._preload_cache:
             if self._preload_cache.start <= position < self._preload_cache.end:

@@ -7,8 +7,15 @@ from typing import Optional, TypeVar
 import cbor2
 import orjson
 
-ConcreteTime = TypeVar("ConcreteTime", bound=str)
-CompactRepr = TypeVar("CompactRepr", bound=str)
+from unchanging_ink.crypto import HashValue, Index0, PathSpec
+
+
+class ConcreteTime(str):
+    pass
+
+
+class CompactRepr(str):
+    pass
 
 
 class CBORMixin:
@@ -33,7 +40,7 @@ class JSONMixin:
 
 
 class HashMixin:
-    def calculate_hash(self) -> bytes:
+    def calculate_hash(self) -> HashValue:
         return sha3_256(self.to_cbor()).digest()
 
 
@@ -55,9 +62,9 @@ class TimestampStructure(HashMixin, CBORMixin):
 
 @dataclass
 class IntervalProofStructure(CBORMixin, JSONMixin):
-    a: int
-    path: list[bytes]
-    ith: bytes
+    a: PathSpec
+    path: list[HashValue]
+    ith: HashValue
     mth: CompactRepr
 
     def as_json_data(self):
@@ -69,7 +76,7 @@ class IntervalProofStructure(CBORMixin, JSONMixin):
 
 @dataclass
 class Timestamp(CBORMixin, JSONMixin):
-    hash: bytes
+    hash: HashValue
     timestamp: ConcreteTime
     typ: str = "ts"
     version: str = "1"
@@ -95,7 +102,7 @@ class Timestamp(CBORMixin, JSONMixin):
 @dataclass
 class TimestampWithId(Timestamp):
     id: Optional[uuid.UUID] = None
-    interval: Optional[int] = None
+    interval: Optional[Index0] = None
 
     def as_json_data(self):
         data = super().as_json_data()
@@ -109,9 +116,9 @@ class TimestampWithId(Timestamp):
 
 @dataclass
 class Interval(HashMixin, CBORMixin, JSONMixin):
-    index: int
+    index: Index0
     timestamp: ConcreteTime
-    ith: bytes
+    ith: HashValue
     version: str = "1"
     typ: str = "it"
 
@@ -127,9 +134,9 @@ class Interval(HashMixin, CBORMixin, JSONMixin):
 
 @dataclass
 class MainTreeConsistencyProof(CBORMixin, JSONMixin):
-    old_interval: int
-    new_interval: int
-    nodes: list[bytes]
+    old_interval: Index0
+    new_interval: Index0
+    nodes: list[HashValue]
     version: str = "1"
 
     def as_json_data(self):
@@ -140,10 +147,10 @@ class MainTreeConsistencyProof(CBORMixin, JSONMixin):
 
 @dataclass
 class MainTreeInclusionProof(CBORMixin, JSONMixin):
-    head: int
-    leaf: Optional[int]
-    a: int
-    nodes: list[bytes]
+    head: Index0
+    leaf: Optional[Index0]
+    a: PathSpec
+    nodes: list[HashValue]
     version: str = "1"
 
     def as_json_data(self):
@@ -156,7 +163,7 @@ class MainTreeInclusionProof(CBORMixin, JSONMixin):
 class MainHeadBase(CBORMixin, JSONMixin):
     authority: str
     interval: Interval
-    mth: bytes
+    mth: HashValue
     version: str = "1"
 
     def as_json_data(self):
@@ -182,5 +189,7 @@ class MainHeadWithConsistency(MainHead):
 
     def as_json_data(self):
         data = super().as_json_data()
-        data["consistency"] = self.consistency.as_json_data() if self.consistency else None
+        data["consistency"] = (
+            self.consistency.as_json_data() if self.consistency else None
+        )
         return data

@@ -17,9 +17,16 @@ from sanic.response import text
 from .cache import MainMerkleTree
 from .models import interval as interval_model
 from .models import timestamp
-from .schemas import (Interval, MainHead, MainTreeConsistencyProof,
-                      TimestampRequest, TimestampStructure, TimestampWithId, MainTreeInclusionProof,
-                      MainHeadWithConsistency)
+from .schemas import (
+    Interval,
+    MainHead,
+    MainHeadWithConsistency,
+    MainTreeConsistencyProof,
+    MainTreeInclusionProof,
+    TimestampRequest,
+    TimestampStructure,
+    TimestampWithId,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +106,7 @@ def setup_routes(app: Sanic):
             tag = None
             wait = False
             compact = False
-            for (k, v) in request.get_query_args(keep_blank_values=True):
+            for k, v in request.get_query_args(keep_blank_values=True):
                 if k == "tag" and len(v) <= 36:
                     tag = v
                 elif k == "wait":
@@ -161,7 +168,7 @@ def setup_routes(app: Sanic):
     async def request_timestamp_one(request: Request, id_: uuid.UUID) -> HTTPResponse:
         compact = False
         wait = False
-        for (k, v) in request.get_query_args(keep_blank_values=True):
+        for k, v in request.get_query_args(keep_blank_values=True):
             if k == "compact":
                 compact = True
             elif k == "wait":
@@ -231,7 +238,7 @@ def setup_routes(app: Sanic):
     )
     async def request_mth_consistency(request, new_interval, old_interval):
         async with app.ctx.engine.begin() as conn, app.ctx.redis.client() as redisconn:
-            tree = MainMerkleTree(redisconn, conn, width=new_interval+1)
+            tree = MainMerkleTree(redisconn, conn, width=new_interval + 1)
             proof = await tree.compute_consistency_proof(old_interval)
         response = MainTreeConsistencyProof(
             old_interval, new_interval, [node.value for node in proof]
@@ -243,7 +250,7 @@ def setup_routes(app: Sanic):
     )
     async def request_mth_inclusion(request, new_interval, old_interval):
         async with app.ctx.engine.begin() as conn, app.ctx.redis.client() as redisconn:
-            tree = MainMerkleTree(redisconn, conn, width=new_interval+1)
+            tree = MainMerkleTree(redisconn, conn, width=new_interval + 1)
             a, proof = await tree.compute_inclusion_proof(old_interval)
         response = MainTreeInclusionProof(
             old_interval, new_interval, a, [node.value for node in proof]

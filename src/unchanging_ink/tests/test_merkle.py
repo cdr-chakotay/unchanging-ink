@@ -1,7 +1,7 @@
 import pytest
 
+from ..crypto import AbstractAsyncMerkleTree, DictCachingMerkleTree, MerkleNode
 from .conftest import EmptyMerkleTreeUncached, StandardMerkleTreeUncached
-from ..crypto import DictCachingMerkleTree, MerkleNode, AbstractAsyncMerkleTree
 
 
 async def test_tree_none():

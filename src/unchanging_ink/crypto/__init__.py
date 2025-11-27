@@ -4,8 +4,16 @@ from nacl.encoding import Base64Encoder
 from nacl.signing import SigningKey
 from sanic import Sanic
 
-from .merkle import (AbstractAsyncCachingMerkleTree, AbstractAsyncMerkleTree,
-                     DictCachingMerkleTree, MerkleNode)
+from .merkle import (
+    AbstractAsyncCachingMerkleTree,
+    AbstractAsyncMerkleTree,
+    Delta,
+    DictCachingMerkleTree,
+    HashValue,
+    Index0,
+    MerkleNode,
+    PathSpec,
+)
 
 
 class Signer:
