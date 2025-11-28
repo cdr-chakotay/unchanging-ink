@@ -59,6 +59,7 @@ export function createTimestampHash(data, timestamp) {
  * @param interval Interval, which the interval tree belongs to
  * @param timestamp Timestamp in ISO 8601 format out of the proof object
  * @param ith Hash of the interval tree (SHA3-256)
+ * @returns {Buffer} ihash
  */
 function createIHash(interval, timestamp, ith){
   const ith_buf = Buffer.from(ith, 'base64')
