@@ -101,13 +101,14 @@ Content-Type: application/cbor
     "proof": {
         "mth": "...url...",
     	"ith": h'.....',
+    	"interval_ts": "2021-04-05T23:39:43.123456Z",
     	"a": 123,
     	"path": [h'...', h'...', h'...']
     }
 }
 ````
 
-`proof` is encoded as follows: `ith` is the interval tree hash, `a` and `path` are defined based on RFC 6962 section 2.1.1. Specifically, `path`is `PATH(m, {interval tree})` and `a` is `m >> (ceil(log2(n)) - len(path))`. That is, `a` is defined as the `len(path)` highest order bits of `m`, if `m` is represented as an integer of the minimal length that fits `n`. This is another way to say that `a` is the node address of `m` in the interval tree, where, starting from the highest order bits, `0`is the left (lower indexes) subtree and `1`is the right (higher indexes) subtree.
+`proof` is encoded as follows: `ith` is the interval tree hash, `interval_ts` is the sealing timestamp of the interval (distinct from `timestamp` which is the entry submission time — both are needed to reconstruct the interval tree head nucleus for MTH verification), `a` and `path` are defined based on RFC 6962 section 2.1.1. Specifically, `path`is `PATH(m, {interval tree})` and `a` is `m >> (ceil(log2(n)) - len(path))`. That is, `a` is defined as the `len(path)` highest order bits of `m`, if `m` is represented as an integer of the minimal length that fits `n`. This is another way to say that `a` is the node address of `m` in the interval tree, where, starting from the highest order bits, `0`is the left (lower indexes) subtree and `1`is the right (higher indexes) subtree.
 
 ````
                                                   [root]
@@ -280,7 +281,7 @@ Returns proof that mth index y is a prefix of mth index x. y <= x.
 
 ````cbor
 {
-    "interval": <INT>,
+    "index": <INT>,
     "timestamp": "<TS>",
     "ith": h'<TREEHASH>',
     "typ": "it",
@@ -292,7 +293,7 @@ Returns proof that mth index y is a prefix of mth index x. y <= x.
 
 ````cbor
 {
-    "interval": <INT>,
+    "index": <INT>,
     "timestamp": "<TS>",
     "ith": h'<TREEHASH>',
     "typ": "it",

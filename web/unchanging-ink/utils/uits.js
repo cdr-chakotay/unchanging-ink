@@ -57,21 +57,20 @@ export function createTimestampHash(data, timestamp) {
  * Therefore, it combines the interval, timestamp and ith into the Interval Tree Head Representation.
  * Its return value is a Buffer containing the ihash - Hash of the Interval Tree Head Representation.
  * @param interval Interval, which the interval tree belongs to
- * @param timestamp Timestamp in ISO 8601 format out of the proof object
+ * @param timestamp ISO 8601 seal time of the interval (not ts.timestamp, which is the entry submission time — use getIntervalTimestamp())
  * @param ith Hash of the interval tree (SHA3-256)
  * @returns {Buffer} ihash
  */
-function createIHash(interval, timestamp, ith){
+function createIHash(interval, timestamp, ith) {
   const ith_buf = Buffer.from(ith, 'base64')
   const intervalTreeHeadStruct = {
-    interval,
+    index: interval,
     timestamp,
     ith: ith_buf,
     typ: 'it',
     version: '1',
   }
   return new SHA3(256).update(encodeCanonical(intervalTreeHeadStruct)).digest()
-
 }
 
 // FIXME: maybe use a proper library to avoid errors. Like https://github.com/brianloveswords/base64-url
@@ -81,10 +80,10 @@ function createIHash(interval, timestamp, ith){
  * @param {Buffer} buf - The buffer to encode.
  * @return {string} The Base64URL-encoded string.
  */
- export function base64UrlEncode(buf) {
-    const b64 = Buffer.from(buf).toString('base64')
-    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  }
+export function base64UrlEncode(buf) {
+  const b64 = Buffer.from(buf).toString('base64')
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
 
 /**
  * Decodes a given Base64 URL encoded string.
@@ -92,15 +91,15 @@ function createIHash(interval, timestamp, ith){
  * @param {string} s - The Base64 URL encoded string to decode. If the input is falsy, it returns an empty Buffer.
  * @return {Buffer} The decoded content as a Buffer.
  */
- export function base64UrlDecode(s) {
-    if (!s) return Buffer.alloc(0)
+export function base64UrlDecode(s) {
+  if (!s) return Buffer.alloc(0)
 
-    // Swap back
-    let b64 = s.replace(/-/g, '+').replace(/_/g, '/')
+  // Swap back
+  let b64 = s.replace(/-/g, '+').replace(/_/g, '/')
 
-    // Pad to multiple of 4
-    b64 += '='.repeat((4 - (b64.length % 4)) % 4)
-    return Buffer.from(b64, 'base64')
+  // Pad to multiple of 4
+  b64 += '='.repeat((4 - (b64.length % 4)) % 4)
+  return Buffer.from(b64, 'base64')
 }
 
 function _verifyInclusionProof({ hash, head, a, path }) {
@@ -109,7 +108,8 @@ function _verifyInclusionProof({ hash, head, a, path }) {
     .update(hash)
     .digest()
   for (const node of path) {
-    if ((a & 1) !== 0) { // path bit is 1, current node is right side and other node is left side
+    if ((a & 1) !== 0) {
+      // path bit is 1, current node is right side and other node is left side
       current = new SHA3(256)
         .update(Buffer.from([1]))
         .update(node)
@@ -124,9 +124,6 @@ function _verifyInclusionProof({ hash, head, a, path }) {
     }
     a >>= 1
   }
-  // TODO: Remove
-  console.log(current, head)
-  console.log(current.toString('base64'), head.toString('base64'))
   return current.compare(head) === 0
 }
 
@@ -191,7 +188,7 @@ export class TimestampService {
     this._listeners = {}
     this._listener_next_idx = 0
     console.log(
-      `Created new TimestampService for ${this.authority} at ${this.baseUrl}`
+      `Created new TimestampService for ${this.authority} at ${this.baseUrl}`,
     )
   }
 
@@ -230,7 +227,7 @@ export class TimestampService {
       this.cacheIth[mh.interval.index] = Buffer.from(mh.interval.ith, 'base64')
       this.cacheMtree[`0-${mh.interval.index + 1}`] = Buffer.from(
         mh.mth,
-        'base64'
+        'base64',
       )
     }
   }
@@ -240,7 +237,7 @@ export class TimestampService {
       this.closeLiveConnection()
     }
     this.ws = new WebSocket(
-      this.baseUrl.replace(/^http/i, 'ws') + 'v1/mth/live'
+      this.baseUrl.replace(/^http/i, 'ws') + 'v1/mth/live',
     )
     this.ws.onmessage = (event) => this._wsmessage(event)
     this.ws.onclose = (event) => this._wsclose(event)
@@ -264,7 +261,9 @@ export class TimestampService {
     const item = {
       time: mh?.interval?.timestamp ?? 'not set',
       hash: mh?.mth ?? 'NOT SET',
-      icon: (String(mh?.interval?.index ?? '?')).match(/.{1,3}/g).join('\n'),
+      icon: String(mh?.interval?.index ?? '?')
+        .match(/.{1,3}/g)
+        .join('\n'),
     }
 
     item.timeobj = new Date(mh.timestamp)
@@ -344,7 +343,7 @@ export class TimestampService {
           Accept: 'application/json',
         },
         body: JSON.stringify(request),
-      }
+      },
     )
     let ts = null
     if (response) {
@@ -361,7 +360,7 @@ export class TimestampService {
     while (retryCounter < 5 && ts && !ts?.proof) {
       const waitTime = Math.max(
         this.estimatedNextTick - new Date(),
-        retryCounter === 0 ? 500 : 1000
+        retryCounter === 0 ? 500 : 1000,
       )
       await sleep(waitTime)
       response = await fetch(
@@ -374,7 +373,7 @@ export class TimestampService {
           headers: {
             Accept: 'application/json',
           },
-        }
+        },
       )
       if (response) {
         ts = await response.json()
@@ -383,11 +382,14 @@ export class TimestampService {
     }
     if (ts && ts.proof) {
       const components = parseCompactTs(ts.proof.mth)
-      this.updateState(components.authority, 'mth', {
-        interval: components.interval,
-        mth: components.mth,
-        ith: ts.proof.ith,
-        received: new Date(),
+      this.updateState(components.authority, 'mh', {
+        mh: {
+          interval: {
+            index: parseInt(components.interval),
+            ith: ts.proof.ith,
+          },
+          mth: base64UrlDecode(components.mth).toString('base64'),
+        },
       })
       return ts
     }
@@ -404,38 +406,38 @@ export class TimestampService {
     return verifyTsProof(hash, ts.proof)
   }
 
-  async verifyIntervalInclusion(ts, inclusion_proof){
-    const ihash = createIHash(ts.interval, ts.timestamp, ts.proof.ith)
+  async verifyIntervalInclusion(ts, inclusion_proof) {
+    const ihash = createIHash(ts.interval, ts.proof.interval_ts, ts.proof.ith)
 
     // Extract mth from url encoded mth inside the proof. Keep Buffer, as we need it downstream
     const mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/i)[0])
 
     return verifyIntervalProof(ihash, mth, inclusion_proof)
-
   }
 
-
-  async getInclusionProof(ith_interval, mth_interval, options = DEFAULT_OPTIONS_GET_PROOF) {
+  async getInclusionProof(
+    ith_interval,
+    mth_interval,
+    options = DEFAULT_OPTIONS_GET_PROOF,
+  ) {
     // cast both intervals to int
     ith_interval = parseInt(ith_interval)
     mth_interval = parseInt(mth_interval)
-    if(ith_interval < 0 || mth_interval < 0) {
-        throw new Error('Invalid interval: ith and mth must be >= 0')
+    if (ith_interval < 0 || mth_interval < 0) {
+      throw new Error('Invalid interval: ith and mth must be >= 0')
     }
 
-    if(ith_interval > mth_interval) {
+    if (ith_interval > mth_interval) {
       throw new Error('Invalid interval: ith must be <= mth')
     }
 
-    const input_url = this.baseUrl + 'v1/mth/' + ith_interval + '/in/' + mth_interval
+    const input_url =
+      this.baseUrl + 'v1/mth/' + ith_interval + '/in/' + mth_interval
     const headers = { Accept: 'application/json' }
 
     let proof = await this._fetchProof(input_url, headers, options)
-    console.log(proof)
     return proof
-    }
-
-
+  }
 
   async _fetchProof(url, headers, options) {
     let attempts = options.maxRetries
@@ -454,10 +456,17 @@ export class TimestampService {
         }
       }
     }
-    throw new Error(`Failed to fetch proof after ${options.maxRetries} attempts. Status code: ${response.status}, Error: ${response.statusText}`)
+    throw new Error(
+      `Failed to fetch proof after ${options.maxRetries} attempts. Status code: ${response.status}, Error: ${response.statusText}`,
+    )
   }
 
-
+  /**
+   * Returns the cached main tree root hash (mth) for the given interval, or null if not cached.
+   * @param {number} interval - The interval index.
+   * @param {boolean} urlsafe - If true, returns base64url; otherwise standard base64.
+   * @returns {string|null}
+   */
   async getCachedMthForInterval(interval, urlsafe = true) {
     let mth = this.cacheMtree[`0-${interval + 1}`]
     if (!mth) {

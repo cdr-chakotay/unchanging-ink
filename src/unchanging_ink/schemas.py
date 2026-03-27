@@ -66,6 +66,7 @@ class IntervalProofStructure(CBORMixin, JSONMixin):
     path: list[HashValue]
     ith: HashValue
     mth: CompactRepr
+    interval_ts: ConcreteTime = None  # Time the interval was sealed and the proof generated.
 
     def as_json_data(self):
         data = asdict(self)

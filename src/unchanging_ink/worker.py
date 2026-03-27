@@ -60,6 +60,8 @@ async def formulate_proof(
             path=[node.value for node in path],
             mth=mth,
             ith=interval.ith,
+            interval_ts=interval.timestamp, # Time the interval was sealed and the proof generated.
+
         ).to_cbor(),
     }
 

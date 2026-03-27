@@ -59,14 +59,16 @@
                   >
                     <v-icon :icon="mdiStamper"></v-icon>
                     {{ t('createTimestamp') }}
-<!--                    Fixme: Should do it dynamically based on progressToNext-->
+                    <!--                    Fixme: Should do it dynamically based on progressToNext-->
                     <template #loader>
                       <v-progress-linear
                         color="primary"
                         height="10"
                         rounded
                         class="mx-2 flex-grow-1"
-                        :indeterminate="createPending || progressToNext === null"
+                        :indeterminate="
+                          createPending || progressToNext === null
+                        "
                         :model-value="
                           createPending || progressToNext === null
                             ? undefined
@@ -94,9 +96,9 @@
                   :disabled="!!verifyInput.text.length"
                 />
                 <v-textarea
-                    v-model="verifyInput.ts"
-                    placeholder="Timestamp / Proof JSON"
-                  />
+                  v-model="verifyInput.ts"
+                  placeholder="Timestamp / Proof JSON"
+                />
               </v-card-text>
               <v-expansion-panels v-model="extendedOptionsOpen">
                 <v-expansion-panel>
@@ -124,7 +126,7 @@
                     color="primary"
                     :disabled="
                       (!verifyInput.text.length && !verifyInput.files.length) ||
-                        !verifyInput.ts.length
+                      !verifyInput.ts.length
                     "
                     @click="doVerify"
                   >
@@ -164,7 +166,11 @@
     >
       {{ verifySnackbar.message }}
       <template #action="{ attrs }">
-        <v-btn variant="text" v-bind="attrs" @click="verifySnackbar.show = false">
+        <v-btn
+          variant="text"
+          v-bind="attrs"
+          @click="verifySnackbar.show = false"
+        >
           {{ t('close') }}
         </v-btn>
       </template>
@@ -173,12 +179,23 @@
 </template>
 <script setup>
 import { mdiStamper } from '@mdi/js'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  shallowRef,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import TimelineCard from '../components/Timeline'
 import { computeHash } from '../utils/hashing'
 import { sleep } from '../utils/misc'
-import { base64UrlDecode, TimestampService } from '../utils/uits'
+import {
+  base64UrlDecode,
+  parseCompactTs,
+  TimestampService,
+} from '../utils/uits'
 import { validateTsInput } from '~/utils/validate'
 
 const { t } = useI18n()
@@ -211,26 +228,21 @@ const verifySnackbar = reactive({
   color: 'success',
 })
 
-const { data: initialTicks } = await useAsyncData(
-  'recent-mth',
-  async () => {
-    if (!process.server) {
-      return []
-    }
-    const { promisify } = await import('util')
-    const redis = await import('redis')
-    const serverService = new TimestampService(
-      runtimeConfig.public.authority
-    )
-    const client = redis.createClient('redis://redis/0')
-    const getAsync = promisify(client.get).bind(client)
-    const val = await getAsync('recent-mth')
-    client.quit?.()
-    const recent = JSON.parse(val || '[]') ?? []
-    recent.forEach((item) => serverService.tick(item, true))
-    return JSON.parse(JSON.stringify(serverService.tickItems))
+const { data: initialTicks } = await useAsyncData('recent-mth', async () => {
+  if (!process.server) {
+    return []
   }
-)
+  const { promisify } = await import('util')
+  const redis = await import('redis')
+  const serverService = new TimestampService(runtimeConfig.public.authority)
+  const client = redis.createClient('redis://redis/0')
+  const getAsync = promisify(client.get).bind(client)
+  const val = await getAsync('recent-mth')
+  client.quit?.()
+  const recent = JSON.parse(val || '[]') ?? []
+  recent.forEach((item) => serverService.tick(item, true))
+  return JSON.parse(JSON.stringify(serverService.tickItems))
+})
 
 if (initialTicks.value?.length) {
   tickItems.value = initialTicks.value
@@ -323,7 +335,6 @@ async function doCreate() {
       },
     })
     await sleep(1000)
-    console.log(await UiTs.value.verifyTimestamp(data_hash, ts))
     createdTimestamps.value.unshift(ts)
   } finally {
     createLoading.value = false
@@ -337,42 +348,52 @@ async function doVerify() {
   let verified_mth = false
   let error = null
   try {
-    const data_hash = await computeHash(verifyInput)  // compute hash of input data to verify it (servers as input)
-    const ts = await validateTsInput(JSON.parse(verifyInput.ts))  // validate timestamp object input
+    const data_hash = await computeHash(verifyInput) // compute hash of input data to verify it (servers as input)
+    const ts = await validateTsInput(JSON.parse(verifyInput.ts)) // validate timestamp object input
 
     // verify data integration in interval tree
     verified_ith = await UiTs.value.verifyTimestamp(data_hash, ts)
     verified = verified_ith
 
     // verify integration of interval tree into main tree
-    let proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64') // extract mth out of mth url from proof object in ts
-    let cached_mth = await UiTs.value.getCachedMthForInterval(ts.interval, false)
+    // NOTE: verifyIntervalInclusion uses ts.proof.interval_ts (the interval seal time),
+    // not ts.timestamp (the entry submission time) — these differ and using ts.timestamp would always fail.
+    let proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString(
+      'base64',
+    ) // extract mth out of mth url from proof object in ts
+    let cached_mth = await UiTs.value.getCachedMthForInterval(
+      ts.interval,
+      false,
+    )
+
+    const mthComponents = parseCompactTs(ts.proof.mth)
+    const headInterval = parseInt(mthComponents.interval)
 
     if (cached_mth && cached_mth !== proof_mth) {
       // if the cached mth does not match the proof mth, for the same interval, the timestamp is not valid
-      return;
+      return
     } else if (cached_mth && cached_mth === proof_mth) {
-      let inclusion_proof = await UiTs.value.getInclusionProof(ts.interval, ts.interval)
-      let verified_mth = await UiTs.value.verifyIntervalInclusion(ts, inclusion_proof )
-      console.log('Verified MTH:', verified_mth)
-
-
-
+      const inclusion_proof = await UiTs.value.getInclusionProof(
+        ts.interval,
+        headInterval,
+      )
+      verified_mth = await UiTs.value.verifyIntervalInclusion(
+        ts,
+        inclusion_proof,
+      )
+    } else {
+      // timestamp is not cached, fetch inclusion proof from authority
+      const inclusion_proof = await UiTs.value.getInclusionProof(
+        ts.interval,
+        headInterval,
+      )
+      verified_mth = await UiTs.value.verifyIntervalInclusion(
+        ts,
+        inclusion_proof,
+      )
     }
 
-    // timestamp is not cached, so we need to fetch it from the authority
-
-    //  if the interval is < than the cached intervals, we can do a proof if the mth can be used to build the cached mth
-
-
-    // if the interval is > the latest cached interval, we can try to verify if we can build the mth based on the cached mth
-
-    // We would need the intermediate nodes from the authority
-
-
-
-
-    console.log('Verified:', verified, ' ith:', verified_ith, 'mth:', verified_mth)
+    verified = verified_ith && verified_mth
   } catch (err) {
     error = err
   } finally {
