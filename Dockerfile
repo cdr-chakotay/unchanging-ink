@@ -34,7 +34,7 @@ COPY src /app/src
 RUN poetry install --without dev
 
 FROM builder-base AS worker-builder
-RUN apt-get install -y libpq-dev
+RUN apt-get update && apt-get install -y libpq-dev
 RUN poetry install --without dev --no-root -E worker
 
 COPY migrations /app/migrations
@@ -42,7 +42,7 @@ COPY src /app/src
 RUN poetry install --without dev -E worker
 
 FROM builder-base AS tester
-RUN apt-get install -y libpq-dev redis-server
+RUN apt-get update && apt-get install -y libpq-dev redis-server
 RUN poetry install --without dev --no-root -E worker -E test
 
 COPY migrations /app/migrations
