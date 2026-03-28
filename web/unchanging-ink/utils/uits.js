@@ -163,6 +163,14 @@ function verifyIntervalProof(ihash, mth, { a, nodes }) {
  * @param {Buffer[]} proofNodes - Proof nodes as Buffers
  * @returns {boolean}
  */
+function _combineHashes(left, right) {
+  return new SHA3(256)
+    .update(Buffer.from([1]))
+    .update(left)
+    .update(right)
+    .digest()
+}
+
 export function verifyConsistencyProof({
   oldRoot,
   oldWidth,
@@ -172,14 +180,6 @@ export function verifyConsistencyProof({
 }) {
   if (oldWidth === newWidth) {
     return oldRoot.compare(newRoot) === 0
-  }
-
-  function combine(left, right) {
-    return new SHA3(256)
-      .update(Buffer.from([1]))
-      .update(left)
-      .update(right)
-      .digest()
   }
 
   const nodes = []
@@ -203,14 +203,14 @@ export function verifyConsistencyProof({
     const node = nodes[i]
     if (newPath === 0) return false
     if (oldPath & 1 || oldPath === newPath) {
-      otree = combine(node, otree)
-      ntree = combine(node, ntree)
+      otree = _combineHashes(node, otree)
+      ntree = _combineHashes(node, ntree)
       while (!(oldPath & 1) && oldPath > 0) {
         oldPath >>= 1
         newPath >>= 1
       }
     } else {
-      ntree = combine(ntree, node)
+      ntree = _combineHashes(ntree, node)
     }
     oldPath >>= 1
     newPath >>= 1

@@ -361,8 +361,12 @@ async function doVerify() {
     // Step 2: verify integration of interval tree into main tree
     // NOTE: verifyIntervalInclusion uses ts.proof.interval_ts (the interval seal time),
     // not ts.timestamp (the entry submission time) — these differ and using ts.timestamp would always fail.
-    const proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64')
-    const cached_mth = await UiTs.value.getCachedMthForInterval(ts.interval, false)
+    const localMth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0])
+    const proof_mth = localMth.toString('base64')
+    const cached_mth = await UiTs.value.getCachedMthForInterval(
+      ts.interval,
+      false,
+    )
     const mthComponents = parseCompactTs(ts.proof.mth)
     const headInterval = parseInt(mthComponents.interval)
 
@@ -374,8 +378,14 @@ async function doVerify() {
       warnings.push('verifyWarnMthNotCached')
     }
 
-    const inclusion_proof = await UiTs.value.getInclusionProof(ts.interval, headInterval)
-    const verified_mth = await UiTs.value.verifyIntervalInclusion(ts, inclusion_proof)
+    const inclusion_proof = await UiTs.value.getInclusionProof(
+      ts.interval,
+      headInterval,
+    )
+    const verified_mth = await UiTs.value.verifyIntervalInclusion(
+      ts,
+      inclusion_proof,
+    )
     if (!verified_mth) {
       failReason = 'verifyFailIthNotInMth'
       return
@@ -388,7 +398,10 @@ async function doVerify() {
       if (attempt > 0) await sleep(INTERVAL_WAIT_MS)
       try {
         remoteMth = await UiTs.value.fetchLatestMth()
-        console.debug('Remote MTH:', { interval: remoteMth.interval, mth: remoteMth.mth.toString('base64') })
+        console.debug('Remote MTH:', {
+          interval: remoteMth.interval,
+          mth: remoteMth.mth.toString('base64'),
+        })
         if (remoteMth.interval > headInterval) break
       } catch (e) {
         console.debug('Failed to fetch remote MTH, attempt', attempt, e)
@@ -401,14 +414,16 @@ async function doVerify() {
       return
     }
 
-    const consistencyProof = await UiTs.value.getConsistencyProof(headInterval + 1, remoteMth.interval)
-    const localMth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0])
+    const consistencyProof = await UiTs.value.getConsistencyProof(
+      headInterval + 1,
+      remoteMth.interval,
+    )
     const consistent = verifyConsistencyProof({
       oldWidth: headInterval + 1,
       oldRoot: localMth,
       newWidth: remoteMth.interval + 1,
       newRoot: remoteMth.mth,
-      proofNodes: consistencyProof.nodes.map(n => Buffer.from(n, 'base64')),
+      proofNodes: consistencyProof.nodes.map((n) => Buffer.from(n, 'base64')),
     })
     if (!consistent) {
       failReason = 'verifyFailMthNotConsistent'
@@ -427,7 +442,7 @@ async function doVerify() {
     } else {
       let message = t('verifySuccess')
       if (warnings.length) {
-        message += ' ' + warnings.map(w => t(w)).join(' ')
+        message += ' ' + warnings.map((w) => t(w)).join(' ')
       }
       verifySnackbar.message = message
       verifySnackbar.color = 'success'
