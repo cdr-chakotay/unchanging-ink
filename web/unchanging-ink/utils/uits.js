@@ -415,6 +415,30 @@ export class TimestampService {
     return verifyIntervalProof(ihash, mth, inclusion_proof)
   }
 
+  async fetchLatestMth(options = DEFAULT_OPTIONS_GET_PROOF) {
+    const data = await this._fetchJson(
+      this.baseUrl + 'v1/mth/current',
+      { Accept: 'application/json' },
+      options,
+    )
+    return {
+      interval: data.interval.index,
+      mth: Buffer.from(data.mth, 'base64'),
+    }
+  }
+
+  async getConsistencyProof(
+    oldInterval,
+    newInterval,
+    options = DEFAULT_OPTIONS_GET_PROOF,
+  ) {
+    oldInterval = parseInt(oldInterval)
+    newInterval = parseInt(newInterval)
+    const url = this.baseUrl + 'v1/mth/' + newInterval + '/from/' + oldInterval
+    const headers = { Accept: 'application/json' }
+    return await this._fetchJson(url, headers, options)
+  }
+
   async getInclusionProof(
     ith_interval,
     mth_interval,
@@ -435,11 +459,11 @@ export class TimestampService {
       this.baseUrl + 'v1/mth/' + ith_interval + '/in/' + mth_interval
     const headers = { Accept: 'application/json' }
 
-    let proof = await this._fetchProof(input_url, headers, options)
+    let proof = await this._fetchJson(input_url, headers, options)
     return proof
   }
 
-  async _fetchProof(url, headers, options) {
+  async _fetchJson(url, headers, options) {
     let attempts = options.maxRetries
     let response = await fetch(url, { headers })
     if (response.ok) {
@@ -457,7 +481,7 @@ export class TimestampService {
       }
     }
     throw new Error(
-      `Failed to fetch proof after ${options.maxRetries} attempts. Status code: ${response.status}, Error: ${response.statusText}`,
+      `Failed to fetch JSON after ${options.maxRetries} attempts. Status code: ${response.status}, Error: ${response.statusText}`,
     )
   }
 
