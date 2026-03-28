@@ -221,6 +221,7 @@ async def async_main():
                 if len(queue) > 5:
                     queue.pop(0)
                 await redisconn.set("recent-mth", orjson.dumps(queue))
+                await redisconn.set("latest-mth", orjson.dumps(live_data))
     finally:
         await engine.dispose()
 

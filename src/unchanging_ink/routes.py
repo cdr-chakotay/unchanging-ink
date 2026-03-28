@@ -7,7 +7,7 @@ from typing import Type, TypeVar
 import cbor2
 from accept_types import get_best_match
 from sanic import Sanic
-from sanic.exceptions import PayloadTooLarge
+from sanic.exceptions import PayloadTooLarge, ServiceUnavailable
 from sanic.request import Request
 from sanic.response import HTTPResponse
 from sanic.response import json
@@ -202,6 +202,17 @@ def setup_routes(app: Sanic):
         while True:
             data = await request.app.ctx.fanout.wait()
             await ws.send(data)
+
+    # Returns the newest MTH available.
+    # If its not the one we want, caller needs to wait for the time of an intveral.
+    # If we do not have an MTH yet, we return 503.
+    @app.route("/mth/current", version=1, methods=["GET"]) 
+    async def request_mth_current(request):
+        async with app.ctx.redis.client() as redisconn:
+            latest_raw = await redisconn.get("latest-mth")
+        if not latest_raw:
+            raise ServiceUnavailable("No current MTH available")
+        return HTTPResponse(body=latest_raw, content_type="application/json")
 
     @app.route("/mth/<interval:int>", version=1, methods=["GET"])
     async def request_mth_one(request, interval):
