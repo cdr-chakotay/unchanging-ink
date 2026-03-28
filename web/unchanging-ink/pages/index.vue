@@ -195,6 +195,7 @@ import {
   base64UrlDecode,
   parseCompactTs,
   TimestampService,
+  verifyConsistencyProof,
 } from '../utils/uits'
 import { validateTsInput } from '~/utils/validate'
 
@@ -343,72 +344,93 @@ async function doCreate() {
 }
 
 async function doVerify() {
-  let verified = false
-  let verified_ith = false
-  let verified_mth = false
+  let failReason = null
+  const warnings = []
   let error = null
   try {
-    const data_hash = await computeHash(verifyInput) // compute hash of input data to verify it (servers as input)
-    const ts = await validateTsInput(JSON.parse(verifyInput.ts)) // validate timestamp object input
+    const data_hash = await computeHash(verifyInput)
+    const ts = await validateTsInput(JSON.parse(verifyInput.ts))
 
-    // verify data integration in interval tree
-    verified_ith = await UiTs.value.verifyTimestamp(data_hash, ts)
-    verified = verified_ith
+    // Step 1: verify data inclusion in interval tree
+    const verified_ith = await UiTs.value.verifyTimestamp(data_hash, ts)
+    if (!verified_ith) {
+      failReason = 'verifyFailIthNotIncluded'
+      return
+    }
 
-    // verify integration of interval tree into main tree
+    // Step 2: verify integration of interval tree into main tree
     // NOTE: verifyIntervalInclusion uses ts.proof.interval_ts (the interval seal time),
     // not ts.timestamp (the entry submission time) — these differ and using ts.timestamp would always fail.
-    let proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString(
-      'base64',
-    ) // extract mth out of mth url from proof object in ts
-    let cached_mth = await UiTs.value.getCachedMthForInterval(
-      ts.interval,
-      false,
-    )
-
+    const proof_mth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0]).toString('base64')
+    const cached_mth = await UiTs.value.getCachedMthForInterval(ts.interval, false)
     const mthComponents = parseCompactTs(ts.proof.mth)
     const headInterval = parseInt(mthComponents.interval)
 
     if (cached_mth && cached_mth !== proof_mth) {
-      // if the cached mth does not match the proof mth, for the same interval, the timestamp is not valid
+      failReason = 'verifyFailIthNotInMth'
       return
-    } else if (cached_mth && cached_mth === proof_mth) {
-      const inclusion_proof = await UiTs.value.getInclusionProof(
-        ts.interval,
-        headInterval,
-      )
-      verified_mth = await UiTs.value.verifyIntervalInclusion(
-        ts,
-        inclusion_proof,
-      )
-    } else {
-      // timestamp is not cached, fetch inclusion proof from authority
-      const inclusion_proof = await UiTs.value.getInclusionProof(
-        ts.interval,
-        headInterval,
-      )
-      verified_mth = await UiTs.value.verifyIntervalInclusion(
-        ts,
-        inclusion_proof,
-      )
+    }
+    if (!cached_mth) {
+      warnings.push('verifyWarnMthNotCached')
     }
 
-    verified = verified_ith && verified_mth
+    const inclusion_proof = await UiTs.value.getInclusionProof(ts.interval, headInterval)
+    const verified_mth = await UiTs.value.verifyIntervalInclusion(ts, inclusion_proof)
+    if (!verified_mth) {
+      failReason = 'verifyFailIthNotInMth'
+      return
+    }
+
+    // Step 3: verify consistency of local MTH with remote (current) MTH
+    let remoteMth = null
+    const INTERVAL_WAIT_MS = 4000
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(INTERVAL_WAIT_MS)
+      try {
+        remoteMth = await UiTs.value.fetchLatestMth()
+        console.debug('Remote MTH:', { interval: remoteMth.interval, mth: remoteMth.mth.toString('base64') })
+        if (remoteMth.interval > headInterval) break
+      } catch (e) {
+        console.debug('Failed to fetch remote MTH, attempt', attempt, e)
+        remoteMth = null
+      }
+    }
+
+    if (!remoteMth || remoteMth.interval <= headInterval) {
+      failReason = 'verifyFailConsistencyFetchFailed'
+      return
+    }
+
+    const consistencyProof = await UiTs.value.getConsistencyProof(headInterval + 1, remoteMth.interval)
+    const localMth = base64UrlDecode(ts.proof.mth.match(/[^:]+$/)[0])
+    const consistent = verifyConsistencyProof({
+      oldWidth: headInterval + 1,
+      oldRoot: localMth,
+      newWidth: remoteMth.interval + 1,
+      newRoot: remoteMth.mth,
+      proofNodes: consistencyProof.nodes.map(n => Buffer.from(n, 'base64')),
+    })
+    if (!consistent) {
+      failReason = 'verifyFailMthNotConsistent'
+      return
+    }
   } catch (err) {
     error = err
   } finally {
+    verifySnackbar.show = true
     if (error) {
-      verifySnackbar.show = true
       verifySnackbar.message = t('verifyError', { error: error.message })
       verifySnackbar.color = 'warning'
-    } else if (verified) {
-      verifySnackbar.show = true
-      verifySnackbar.message = t('verifySuccess')
-      verifySnackbar.color = 'success'
-    } else {
-      verifySnackbar.show = true
-      verifySnackbar.message = t('verifyFailed')
+    } else if (failReason) {
+      verifySnackbar.message = t(failReason)
       verifySnackbar.color = 'error'
+    } else {
+      let message = t('verifySuccess')
+      if (warnings.length) {
+        message += ' ' + warnings.map(w => t(w)).join(' ')
+      }
+      verifySnackbar.message = message
+      verifySnackbar.color = 'success'
     }
   }
 }
@@ -450,6 +472,11 @@ de:
   verifyError: 'Fehler bei der Überprüfung: {error}'
   verifySuccess: Zeitstempel ist für die bereitgestellten Daten gültig.
   verifyFailed: Zeitstempel ist NICHT gültig für die bereitgestellten Daten.
+  verifyFailIthNotIncluded: Daten sind nicht im Intervallbaum enthalten.
+  verifyFailIthNotInMth: Intervallbaum ist nicht im Hauptbaum enthalten.
+  verifyFailMthNotConsistent: Hauptbaum ist nicht konsistent mit dem aktuellen Hauptbaum der Autorität.
+  verifyFailConsistencyFetchFailed: Aktueller Hauptbaum der Autorität konnte nicht abgerufen werden.
+  verifyWarnMthNotCached: MTH war nicht lokal zwischengespeichert.
   close: Schließen
 en:
   createTimestamp: Create timestamp
@@ -466,5 +493,10 @@ en:
   verifyError: 'Error during verification: {error}'
   verifySuccess: Timestamp is valid for the provided data.
   verifyFailed: Timestamp is NOT valid for the provided data.
+  verifyFailIthNotIncluded: Data is not included in the interval tree.
+  verifyFailIthNotInMth: Interval tree is not part of the main tree.
+  verifyFailMthNotConsistent: Main tree is not verifiable against the remote main tree.
+  verifyFailConsistencyFetchFailed: Could not fetch current main tree from authority.
+  verifyWarnMthNotCached: MTH was not locally cached.
   close: Close
 </i18n>

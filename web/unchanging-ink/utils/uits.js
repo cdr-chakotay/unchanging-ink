@@ -153,6 +153,76 @@ function verifyIntervalProof(ihash, mth, { a, nodes }) {
   })
 }
 
+/**
+ * Verify a consistency proof between an old and new Merkle tree.
+ * Ported from merkle.py verify_consistency_proof.
+ * @param {Buffer} oldRoot - Root hash of the old tree
+ * @param {number} oldWidth - Width (number of leaves) of the old tree
+ * @param {Buffer} newRoot - Root hash of the new tree
+ * @param {number} newWidth - Width (number of leaves) of the new tree
+ * @param {Buffer[]} proofNodes - Proof nodes as Buffers
+ * @returns {boolean}
+ */
+export function verifyConsistencyProof({
+  oldRoot,
+  oldWidth,
+  newRoot,
+  newWidth,
+  proofNodes,
+}) {
+  if (oldWidth === newWidth) {
+    return oldRoot.compare(newRoot) === 0
+  }
+
+  function combine(left, right) {
+    return new SHA3(256)
+      .update(Buffer.from([1]))
+      .update(left)
+      .update(right)
+      .digest()
+  }
+
+  const nodes = []
+
+  // If old width is a power of 2, prepend old root as implicit first node
+  if ((oldWidth & (oldWidth - 1)) === 0) {
+    nodes.push(oldRoot)
+  }
+  nodes.push(...proofNodes)
+
+  let oldPath = oldWidth - 1
+  let newPath = newWidth - 1
+  while (oldPath & 1) {
+    oldPath >>= 1
+    newPath >>= 1
+  }
+
+  let otree = nodes[0]
+  let ntree = nodes[0]
+  for (let i = 1; i < nodes.length; i++) {
+    const node = nodes[i]
+    if (newPath === 0) return false
+    if (oldPath & 1 || oldPath === newPath) {
+      otree = combine(node, otree)
+      ntree = combine(node, ntree)
+      while (!(oldPath & 1) && oldPath > 0) {
+        oldPath >>= 1
+        newPath >>= 1
+      }
+    } else {
+      ntree = combine(ntree, node)
+    }
+    oldPath >>= 1
+    newPath >>= 1
+  }
+
+  return (
+    newPath === 0 &&
+    otree.compare(oldRoot) === 0 &&
+    ntree.compare(newRoot) === 0
+  )
+}
+
 const SOURCE_DIRECT_SET = 'direct'
 
 class InconsistencyError extends Error {
@@ -187,9 +257,6 @@ export class TimestampService {
     this.tickItems = []
     this._listeners = {}
     this._listener_next_idx = 0
-    console.log(
-      `Created new TimestampService for ${this.authority} at ${this.baseUrl}`,
-    )
   }
 
   addListener(f) {
@@ -237,6 +304,7 @@ export class TimestampService {
       this.closeLiveConnection()
     }
     this.ws = new WebSocket(
+      // FIXME use WSS
       this.baseUrl.replace(/^http/i, 'ws') + 'v1/mth/live',
     )
     this.ws.onmessage = (event) => this._wsmessage(event)
