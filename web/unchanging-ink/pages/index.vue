@@ -398,19 +398,18 @@ async function doVerify() {
       if (attempt > 0) await sleep(INTERVAL_WAIT_MS)
       try {
         remoteMth = await UiTs.value.fetchLatestMth()
-        console.debug('Remote MTH:', {
-          interval: remoteMth.interval,
-          mth: remoteMth.mth.toString('base64'),
-        })
         if (remoteMth.interval > headInterval) break
       } catch (e) {
-        console.debug('Failed to fetch remote MTH, attempt', attempt, e)
         remoteMth = null
       }
     }
 
-    if (!remoteMth || remoteMth.interval <= headInterval) {
+    if (!remoteMth) {
       failReason = 'verifyFailConsistencyFetchFailed'
+      return
+    }
+    if (remoteMth.interval <= headInterval) {
+      failReason = 'verifyFailMthNotNewer'
       return
     }
 
@@ -491,6 +490,7 @@ de:
   verifyFailIthNotInMth: Intervallbaum ist nicht im Hauptbaum enthalten.
   verifyFailMthNotConsistent: Hauptbaum ist nicht konsistent mit dem aktuellen Hauptbaum der Autorität.
   verifyFailConsistencyFetchFailed: Aktueller Hauptbaum der Autorität konnte nicht abgerufen werden.
+  verifyFailMthNotNewer: Autorität hat keinen neueren Hauptbaum als den bereits bekannten.
   verifyWarnMthNotCached: MTH war nicht lokal zwischengespeichert.
   close: Schließen
 en:
@@ -512,6 +512,7 @@ en:
   verifyFailIthNotInMth: Interval tree is not part of the main tree.
   verifyFailMthNotConsistent: Main tree is not verifiable against the remote main tree.
   verifyFailConsistencyFetchFailed: Could not fetch current main tree from authority.
+  verifyFailMthNotNewer: Authority does not have a newer main tree than the one already known.
   verifyWarnMthNotCached: MTH was not locally cached.
   close: Close
 </i18n>
