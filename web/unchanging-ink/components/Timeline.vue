@@ -82,8 +82,14 @@ export default {
       },
       deep: true,
     },
+    progressToNext(newVal) {
+      if (!this.animFrame && !this.tickTimer) {
+        this.displayProgress = newVal
+      }
+    },
   },
   mounted() {
+    this.displayProgress = this.progressToNext
     document.addEventListener(
       'visibilitychange',
       this.handleVisibilityChange,
@@ -125,8 +131,8 @@ export default {
         } else {
           this.animFrame = null
           this.tickTimer = setTimeout(() => {
-            this.displayProgress = null
             this.tickTimer = null
+            this.displayProgress = this.progressToNext
           }, 300)
         }
       }
